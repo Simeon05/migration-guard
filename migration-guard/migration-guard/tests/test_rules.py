@@ -1,6 +1,6 @@
-from pglast.parser import ParseError
 import pytest
 
+from migration_guard.ports.parser import ParserError
 from migration_guard.rules import detect_dropped_columns
 
 
@@ -38,7 +38,7 @@ def test_ignores_drop_column_in_string():
 
 
 def test_rejects_invalid_sql():
-    with pytest.raises(ParseError):
+    with pytest.raises(ParserError):
         detect_dropped_columns("ALTER TABLE customers DROP COLUMN;", "invalid.sql")
 
 
@@ -79,3 +79,61 @@ def test_reports_each_dropped_column_on_its_own_line():
         "DROP COLUMN phone",
     ]
     assert [finding.line for finding in findings] == [2, 3]
+
+
+def test_reports_drop_column_after_string_literal_in_previous_statement():
+    sql = """SELECT 'DROP COLUMN fake';
+ALTER TABLE customers DROP COLUMN email;"""
+
+    findings = detect_dropped_columns(sql, "after-string.sql")
+
+    assert len(findings) == 1
+    assert findings[0].line == 2
+
+
+def test_reports_drop_column_on_crlf_input():
+    sql = "ALTER TABLE customers\r\nDROP COLUMN email;\r\n"
+
+    findings = detect_dropped_columns(sql, "crlf.sql")
+
+    assert len(findings) == 1
+    assert findings[0].line == 2
+
+
+def test_reports_drop_column_after_unicode_before_statement():
+    sql = "-- café ☕\nALTER TABLE customers DROP COLUMN email;"
+
+    findings = detect_dropped_columns(sql, "unicode.sql")
+
+    assert len(findings) == 1
+    assert findings[0].line == 2
+
+
+def test_reports_exact_span_for_quoted_identifier():
+    sql = 'ALTER TABLE "Customer Accounts" DROP COLUMN IF EXISTS "Email Address";'
+
+    findings = detect_dropped_columns(sql, "quoted.sql")
+
+    assert len(findings) == 1
+    assert findings[0].line == 1
+    assert findings[0].evidence == 'DROP COLUMN IF EXISTS "Email Address"'
+
+
+def test_reports_statement_after_dollar_quoted_body():
+    sql = """SELECT $$DROP COLUMN fake$$;
+ALTER TABLE customers DROP COLUMN email;"""
+
+    findings = detect_dropped_columns(sql, "dollar-quote.sql")
+
+    assert len(findings) == 1
+    assert findings[0].line == 2
+
+
+def test_reports_each_drop_across_multiple_statements():
+    sql = """ALTER TABLE customers DROP COLUMN email;
+ALTER TABLE orders DROP COLUMN phone;"""
+
+    findings = detect_dropped_columns(sql, "multiple-statements.sql")
+
+    assert len(findings) == 2
+    assert [finding.line for finding in findings] == [1, 2]

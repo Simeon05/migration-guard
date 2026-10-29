@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["import-linter", "pytest"]
 
 [project.scripts]
 migration-guard = "migration_guard.cli:app"
@@ -24,3 +24,16 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.importlinter]
+root_package = "migration_guard"
+
+[[tool.importlinter.contracts]]
+name = "Only the pglast adapter may import pglast"
+type = "forbidden"
+source_modules = [
+    "migration_guard.rules",
+    "migration_guard.cli",
+    "migration_guard.ports",
+]
+forbidden_modules = ["pglast"]

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://migrationguard.dev/schemas/findings-v1.schema.json",
+  "title": "MigrationGuard findings",
+  "type": "object",
+  "required": ["schema_version", "findings"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "rule_id",
+          "severity",
+          "title",
+          "file",
+          "line",
+          "evidence",
+          "reason",
+          "recommendation"
+        ],
+        "properties": {
+          "rule_id": { "type": "string" },
+          "severity": { "enum": ["info", "low", "medium", "high"] },
+          "title": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "column": { "type": "integer", "minimum": 1 },
+          "evidence": { "type": "string" },
+          "reason": { "type": "string" },
+          "recommendation": { "type": "string" },
+          "confidence": { "enum": ["low", "medium", "high"] }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

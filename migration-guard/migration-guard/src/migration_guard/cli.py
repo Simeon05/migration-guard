@@ -1,9 +1,13 @@
 from pathlib import Path
 
 import typer
-from pglast.parser import ParseError
 
+from migration_guard.config import Config, load_config
+from migration_guard.ports.parser import ParserError
+from migration_guard.reporters.json import render_json
+from migration_guard.reporters.sarif import render_sarif
 from migration_guard.rules import detect_dropped_columns
+from migration_guard.suppress import apply_suppressions
 
 
 app = typer.Typer(help="Check PostgreSQL migrations for potential risks.")
@@ -15,34 +19,81 @@ def main() -> None:
 
 
 @app.command()
-def check(file: Path) -> None:
-    """Analyse a PostgreSQL migration file."""
-    if not file.is_file():
-        typer.echo(f"Error: File not found: {file}", err=True)
-        raise typer.Exit(code=1)
+def check(
+    paths: list[Path],
+    format: str = typer.Option("text", "--format"),
+    fail_on: str | None = typer.Option(None, "--fail-on"),
+    config_path: Path | None = typer.Option(None, "--config"),
+) -> None:
+    """Analyse PostgreSQL migration files or directories."""
+    if format not in {"text", "json", "sarif"}:
+        typer.echo(f"Error: Unsupported format: {format}", err=True)
+        raise typer.Exit(code=2)
+
+    files: list[Path] = []
+    for path in paths:
+        if path.is_file():
+            files.append(path)
+        elif path.is_dir():
+            files.extend(item for item in path.rglob("*.sql") if item.is_file())
+        else:
+            typer.echo(f"Error: File not found: {path}", err=True)
+            raise typer.Exit(code=2)
 
     try:
-        sql = file.read_text(encoding="utf-8")
-        findings = detect_dropped_columns(sql, str(file))
-    except (ParseError, UnicodeDecodeError) as error:
+        config = load_config(config_path) if config_path else Config()
+    except (OSError, ValueError) as error:
+        typer.echo(f"Error: Could not load config: {error}", err=True)
+        raise typer.Exit(code=2) from error
+
+    threshold = fail_on or config.fail_on
+    if threshold not in {"info", "low", "medium", "high"}:
+        typer.echo(f"Error: Unsupported fail threshold: {threshold}", err=True)
+        raise typer.Exit(code=2)
+
+    severity_rank = {"info": 0, "low": 1, "medium": 2, "high": 3}
+    findings = []
+    suppressed_count = 0
+    try:
+        for file in sorted(set(files)):
+            sql = file.read_text(encoding="utf-8")
+            result = apply_suppressions(
+                sql,
+                detect_dropped_columns(sql, str(file)),
+                require_reason=config.suppress_require_reason,
+            )
+            findings.extend(result.findings)
+            suppressed_count += len(result.suppressed)
+    except (ParserError, UnicodeDecodeError, ValueError) as error:
         typer.echo(f"Error: Could not analyse file: {error}", err=True)
-        raise typer.Exit(code=1) from error
+        raise typer.Exit(code=2) from error
 
-    typer.echo("MigrationGuard")
-    typer.echo("")
+    if format == "json":
+        typer.echo(render_json(findings), nl=False)
+    elif format == "sarif":
+        typer.echo(render_sarif(findings), nl=False)
+    else:
+        typer.echo("MigrationGuard")
+        typer.echo("")
+        if not findings:
+            typer.echo("No supported risks detected.")
+            typer.echo("This does not guarantee the migration is safe.")
+        else:
+            for finding in sorted(
+                findings,
+                key=lambda item: (item.file, item.line, item.column, item.rule_id),
+            ):
+                typer.echo(f"{finding.severity.upper()} {finding.rule_id} — {finding.title}")
+                typer.echo(f"File: {finding.file}")
+                typer.echo(f"Line: {finding.line}")
+                typer.echo(f"Evidence: {finding.evidence}")
+                typer.echo(f"Reason: {finding.reason}")
+                typer.echo(f"Recommendation: {finding.recommendation}")
+        if suppressed_count:
+            typer.echo(f"Suppressed findings: {suppressed_count}")
 
-    if not findings:
-        typer.echo("No supported risks detected.")
-        typer.echo("This does not guarantee the migration is safe.")
-        return
-
-    for finding in findings:
-        typer.echo(f"{finding.severity.upper()} {finding.rule_id} — {finding.title}")
-        typer.echo(f"File: {finding.file}")
-        typer.echo(f"Line: {finding.line}")
-        typer.echo(f"Evidence: {finding.evidence}")
-        typer.echo(f"Reason: {finding.reason}")
-        typer.echo(f"Recommendation: {finding.recommendation}")
+    if any(severity_rank[finding.severity] >= severity_rank[threshold] for finding in findings):
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
