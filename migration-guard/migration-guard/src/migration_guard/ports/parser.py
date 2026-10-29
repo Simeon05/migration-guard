@@ -17,6 +17,7 @@ class Token:
 class Command:
     kind: str
     name: str | None
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,17 @@ class Statement:
     commands: tuple[Command, ...]
     start: int
     length: int
+    object_kind: str | None = None
+    objects: tuple[str, ...] = ()
+    cascade: bool = False
+    missing_ok: bool = False
+    restart_identity: bool = False
+    rename_kind: str | None = None
+    old_name: str | None = None
+    new_name: str | None = None
+    concurrent: bool = False
+    variable_name: str | None = None
+    transaction_kind: str | None = None
 
 
 @dataclass(frozen=True)

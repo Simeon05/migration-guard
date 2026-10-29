@@ -6,7 +6,15 @@ from migration_guard.config import Config, load_config
 from migration_guard.ports.parser import ParserError
 from migration_guard.reporters.json import render_json
 from migration_guard.reporters.sarif import render_sarif
-from migration_guard.rules import detect_dropped_columns
+from migration_guard.rules import (
+    detect_destructive_operations,
+    detect_dropped_columns,
+    detect_renames,
+    detect_not_null_changes,
+    detect_index_creation,
+    detect_remaining_risks,
+    detect_type_changes,
+)
 from migration_guard.suppress import apply_suppressions
 
 
@@ -59,7 +67,13 @@ def check(
             sql = file.read_text(encoding="utf-8")
             result = apply_suppressions(
                 sql,
-                detect_dropped_columns(sql, str(file)),
+                detect_dropped_columns(sql, str(file))
+                + detect_destructive_operations(sql, str(file))
+                + detect_renames(sql, str(file))
+                + detect_type_changes(sql, str(file))
+                + detect_not_null_changes(sql, str(file))
+                + detect_index_creation(sql, str(file))
+                + detect_remaining_risks(sql, str(file)),
                 require_reason=config.suppress_require_reason,
             )
             findings.extend(result.findings)
