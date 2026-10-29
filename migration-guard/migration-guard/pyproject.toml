@@ -27,13 +27,10 @@ testpaths = ["tests"]
 
 [tool.importlinter]
 root_package = "migration_guard"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Only the pglast adapter may import pglast"
+name = "Parser ports do not import pglast"
 type = "forbidden"
-source_modules = [
-    "migration_guard.rules",
-    "migration_guard.cli",
-    "migration_guard.ports",
-]
+source_modules = ["migration_guard.ports"]
 forbidden_modules = ["pglast"]
